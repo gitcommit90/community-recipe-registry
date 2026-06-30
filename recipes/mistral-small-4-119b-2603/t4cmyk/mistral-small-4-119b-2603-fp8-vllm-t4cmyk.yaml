@@ -1,0 +1,36 @@
+model: mistralai/Mistral-Small-4-119B-2603
+name: mistral-small-4-119b-2603
+runtime: vllm
+container: vllm-node-tf5
+metadata:
+  description: Mistral-Small-4-119B-2603 model with FP8 quantization support
+  model_params: 119B
+  model_dtype: fp8
+min_nodes: 2
+defaults:
+  port: 8000
+  host: 0.0.0.0
+  tensor_parallel: 2
+  pipeline_parallel: 1
+  gpu_memory_utilization: 0.8
+  max_model_len: 262144
+  max_num_batched_tokens: 16384
+  attention_backend: TRITON_MLA
+  tool_call_parser: mistral
+  reasoning_parser: mistral
+env: {}
+command: |
+  vllm serve {model} \
+    -tp {tensor_parallel} \
+    -pp {pipeline_parallel} \
+    --max-model-len {max_model_len} \
+    --gpu-memory-utilization {gpu_memory_utilization} \
+    --port {port} \
+    --host {host} \
+    --attention-backend {attention_backend} \
+    --tool-call-parser {tool_call_parser} \
+    --enable-auto-tool-choice \
+    --reasoning-parser {reasoning_parser} \
+    --max-num-batched-tokens {max_num_batched_tokens} \
+    --default-chat-template-kwargs '{"reasoning_effort": "high"}'
+
