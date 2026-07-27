@@ -1,0 +1,63 @@
+recipe_version: "2"
+model: nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4
+runtime: vllm
+container: ghcr.io/spark-arena/dgx-vllm-eugr-nightly:2026072302
+
+metadata:
+  description: >-
+    Single-node config for NVIDIA's Nemotron-3-Super-120B-A12B-NVFP4, derived from the
+    leaderboard's best single-node entry for this model (23.71 t/s tg128 c1; its recipe runs
+    MTP at num_speculative_tokens=1) with two measured changes: nst=3 (mean acceptance length
+    1.61 -> 2.64) and gpu-memory-utilization 0.88 (the lineage's 0.75 fails engine init on the
+    tested build, vLLM 0.23.1rc1.dev1408 -- no memory left for the KV cache blocks). Measured
+    23.6 +/- 1.7 t/s tg128(c1) at N=5 on a single GB10, statistically indistinguishable from
+    the published 23.71. Container pinned to the tested tag. Receipts and raw per-run data:
+    https://github.com/maxspevack/spark-rocky/tree/main/receipts
+    (--served-model-name omitted: it equals the model id, and inline served-model-name values
+    cause llama-benchy to 404.)
+  maintainer: "@maxspevack"
+  model_params: 120B
+  model_dtype: nvfp4
+  kv_dtype: fp8
+
+defaults:
+  port: 8000
+  host: 0.0.0.0
+  tensor_parallel: 1
+  gpu_memory_utilization: 0.88
+  max_model_len: 131072
+  max_num_seqs: 4
+  max_num_batched_tokens: 16384
+  kv_cache_dtype: fp8
+  quantization: fp4
+  moe_backend: marlin
+  mamba_ssm_cache_dtype: float32
+  tool_call_parser: qwen3_coder
+  reasoning_parser: nemotron_v3
+  speculative_config: '{"method":"mtp","num_speculative_tokens":3,"moe_backend":"triton"}'
+
+env:
+  VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
+  VLLM_USE_FLASHINFER_MOE_FP4: "0"
+  VLLM_NVFP4_GEMM_BACKEND: marlin
+
+command: |
+  vllm serve {model} \
+    --tensor-parallel-size {tensor_parallel} \
+    --port {port} \
+    --host {host} \
+    --max-model-len {max_model_len} \
+    --max-num-seqs {max_num_seqs} \
+    --max-num-batched-tokens {max_num_batched_tokens} \
+    --gpu-memory-utilization {gpu_memory_utilization} \
+    --quantization {quantization} \
+    --moe-backend {moe_backend} \
+    --kv-cache-dtype {kv_cache_dtype} \
+    --mamba-ssm-cache-dtype {mamba_ssm_cache_dtype} \
+    --async-scheduling \
+    --enable-chunked-prefill \
+    --reasoning-parser {reasoning_parser} \
+    --enable-auto-tool-choice \
+    --tool-call-parser {tool_call_parser} \
+    --speculative-config '{speculative_config}' \
+    --trust-remote-code
