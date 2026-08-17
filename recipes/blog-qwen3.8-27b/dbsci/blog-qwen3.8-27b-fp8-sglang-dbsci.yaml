@@ -1,0 +1,94 @@
+recipe_version: "2"
+model: Qwen/Qwen3.8-27B-FP8
+runtime: sglang
+container: lmsysorg/sglang:latest-cu130
+max_nodes: 1
+
+metadata:
+  description: |
+    Qwen3.8-27B-FP8 on SGLang — engine 2 of 3 in the "one command, three
+    engines" blog set. Transcribed from Saiyam Pathak's "Running Qwen3.8-27B
+    on DGX Spark" (kubesimplify, 2026-08-17), who adapted the
+    qwen3.5-27b-fp8-sglang recipe by swapping the checkpoint and the image.
+
+    ★ THE IMAGE PIN IS THE POINT OF THIS RECIPE, not the flags.
+
+    The blog's first attempt used the pinned SGLang dev build the qwen3.5
+    recipe carried (`scitrera/dgx-spark-sglang:0.5.9-dev1-329817e2-t5`), an
+    image built before Qwen3.8 existed. It loaded the new checkpoint without a
+    single warning, passed the health check, answered every request — and
+    generated token soup ("visit visit visits 訪...逻辑逻辑logic..."). Nothing
+    in the serve config caused it and nothing in the config could fix it;
+    disabling speculation changed nothing. Moving to upstream
+    `lmsysorg/sglang:latest-cu130` fixed it instantly.
+
+    So: this recipe deliberately tracks a MOVING upstream tag rather than a
+    reproducible pin, because on a day-zero checkpoint the pin is the hazard.
+    Coherence-test the output before you trust any number this produces — a
+    crash tells you something is wrong, silent garbage does not. sparkrun's
+    benchmark flow runs a coherence check by default for exactly this reason;
+    do not reach for `-b skip_coherence=true` here.
+
+    Matched-trio notes: 131072 context, one node, port 8000, served name
+    qwen3.8-27b and `benchmark.tokenizer` are held identical to the vllm and
+    llama-cpp siblings so a difference in the numbers is a difference in the
+    engine.
+
+    NEXTN speculative decoding is enabled, carried over from the qwen3.5
+    recipe this was adapted from, and it roughly doubles single-stream decode
+    (the blog measured 7.7 → 13.4 t/s at c=1, 54.3 → 71.0 t/s aggregate at
+    c=10). That makes this the one member of the trio running speculation, so
+    it is NOT apples-to-apples with the vllm sibling as shipped. No run-time
+    flag removes it — `-o` overrides a value, and the four `--speculative-*`
+    flags are written into the `command:` template — so for the strictly
+    matched three-way comparison, copy this file locally and delete the four
+    `speculative_*` keys from `defaults:` together with the four matching
+    `--speculative-*` lines from `command:`.
+
+    Both numbers are worth having and the blog reports both; the recipe ships
+    with speculation on because that is the configuration a person actually
+    wants to serve.
+  maintainer: "@dbsci"
+  model_params: 27B dense hybrid (48 Gated DeltaNet + 16 full-attention layers)
+  model_dtype: fp8
+  kv_dtype: fp8
+  quantization: fp8
+  source: https://blog.kubesimplify.com/qwen3-8-27b-on-dgx-spark
+
+defaults:
+  port: 8000
+  host: 0.0.0.0
+  served_model_name: qwen3.8-27b
+  tensor_parallel: 1
+  gpu_memory_utilization: 0.80
+  max_model_len: 131072
+  attention_backend: flashinfer
+  reasoning_parser: qwen3
+  tool_call_parser: qwen3_coder
+  speculative_algorithm: NEXTN
+  speculative_num_steps: 3
+  speculative_eagle_topk: 1
+  speculative_num_draft_tokens: 4
+
+benchmark:
+  # See the vllm sibling — pinned so depth labels are real Qwen tokens in all
+  # three runs rather than llama-benchy's GPT-2 fallback.
+  tokenizer: Qwen/Qwen3.8-27B
+
+command: |
+  sglang serve \
+      --model-path {model} \
+      --served-model-name {served_model_name} \
+      --host {host} \
+      --port {port} \
+      --tp {tensor_parallel} \
+      --mem-fraction-static {gpu_memory_utilization} \
+      --context-length {max_model_len} \
+      --attention-backend {attention_backend} \
+      --reasoning-parser {reasoning_parser} \
+      --tool-call-parser {tool_call_parser} \
+      --speculative-algorithm {speculative_algorithm} \
+      --speculative-num-steps {speculative_num_steps} \
+      --speculative-eagle-topk {speculative_eagle_topk} \
+      --speculative-num-draft-tokens {speculative_num_draft_tokens} \
+      --trust-remote-code

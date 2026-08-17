@@ -1,0 +1,81 @@
+recipe_version: "2"
+model: Qwen/Qwen3.8-27B-FP8
+runtime: vllm
+container: ghcr.io/spark-arena/dgx-vllm-eugr-nightly:latest
+max_nodes: 1
+
+metadata:
+  description: |
+    Qwen3.8-27B-FP8 on vLLM — engine 1 of 3 in the "one command, three engines"
+    blog set. Transcribed from Saiyam Pathak's "Running Qwen3.8-27B on DGX
+    Spark" (kubesimplify, 2026-08-17), which published this exact vLLM config.
+
+    This recipe is one of a matched trio (vllm / sglang / llama-cpp) that exist
+    to be A/B'd against each other, NOT to be the fastest config for this
+    model. Serve flags are held as close to identical as three different
+    engines allow, so a difference in the numbers is a difference in the
+    engine. If you want peak throughput on this checkpoint instead, use
+    @official/qwen3.8-27b-fp8-mtp-vllm (MTP speculative decoding) or the NVFP4
+    checkpoint — both are faster and neither is comparable to the two siblings
+    here.
+
+    Held identical across the trio: 131072 context, one node, port 8000,
+    served name qwen3.8-27b, and `benchmark.tokenizer` pinned to the base
+    checkpoint so llama-benchy's depth labels are real Qwen tokens in all
+    three runs (without it, a non-HF served name silently falls back to the
+    GPT-2 tokenizer and the depth axes stop being comparable).
+
+    Deliberately NOT enabled: speculative decoding. The llama.cpp sibling runs
+    a plain unsloth GGUF with no MTP head, so turning MTP on here would be
+    comparing a speculative engine against a non-speculative one. See the
+    sglang sibling's notes for the same reasoning applied to NEXTN.
+  maintainer: "@dbsci"
+  model_params: 27B dense hybrid (48 Gated DeltaNet + 16 full-attention layers)
+  model_dtype: fp8
+  kv_dtype: fp8
+  quantization: fp8
+  source: https://blog.kubesimplify.com/qwen3-8-27b-on-dgx-spark
+
+defaults:
+  port: 8000
+  host: 0.0.0.0
+  served_model_name: qwen3.8-27b
+  tensor_parallel: 1
+  pipeline_parallel: 1
+  gpu_memory_utilization: 0.8
+  max_model_len: 131072
+  max_num_batched_tokens: 32768
+  load_format: instanttensor
+  kv_cache_dtype: fp8
+  attention_backend: flashinfer
+  tool_call_parser: qwen3_coder
+  reasoning_parser: qwen3
+
+env:
+  VLLM_MARLIN_USE_ATOMIC_ADD: "1"
+
+benchmark:
+  # Pinned so llama-benchy tokenizes depth prompts with the real Qwen
+  # tokenizer rather than its GPT-2 fallback (the served name is not an HF id).
+  # All three recipes in this set pin the same value, which is what makes the
+  # depth axis comparable across engines.
+  tokenizer: Qwen/Qwen3.8-27B
+
+command: |
+  vllm serve {model} \
+    --host {host} \
+    --port {port} \
+    --served-model-name {served_model_name} \
+    --max-model-len {max_model_len} \
+    --max-num-batched-tokens {max_num_batched_tokens} \
+    --gpu-memory-utilization {gpu_memory_utilization} \
+    --enable-auto-tool-choice \
+    --tool-call-parser {tool_call_parser} \
+    --reasoning-parser {reasoning_parser} \
+    --kv-cache-dtype {kv_cache_dtype} \
+    --load-format {load_format} \
+    --attention-backend {attention_backend} \
+    --enable-prefix-caching \
+    --trust-remote-code \
+    -tp {tensor_parallel} \
+    -pp {pipeline_parallel}

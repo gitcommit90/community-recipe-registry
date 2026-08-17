@@ -1,0 +1,39 @@
+framework: llama-benchy
+
+metadata:
+  description: |
+    Blog-parity profile for the blog-qwen3.8-27b recipe set — the exact grid
+    Saiyam Pathak's "Running Qwen3.8-27B on DGX Spark" (kubesimplify,
+    2026-08-17) measured, so the three recipes reproduce that post's tables
+    rather than a different experiment that happens to use the same model.
+
+    It is a transcription of the post's own llama-benchy invocation:
+
+        uvx llama-benchy@0.4.0 --base-url http://<spark-ip>:8000/v1 \
+          --model <served-model> \
+          --pp 2048 --tg 128 --depth 0 16384 32768 \
+          --concurrency 1 2 5 10 --enable-prefix-caching \
+          --save-result results.csv --format csv
+
+    Twelve cells (3 depths x 4 concurrencies), not the 28 of spark-arena-v1.
+    The shorter ladder is the point: it stops at 32768 tokens of depth, which
+    is what makes the llama.cpp leg of the comparison affordable at all (see
+    the recipe set's README — llama.cpp divides --ctx-size across --parallel
+    slots, so the deepest cell at concurrency 10 is what sizes the KV cache).
+
+    Use this profile when you want to sit the numbers beside the original
+    post's. When you want a leaderboard submission instead, do not name a
+    profile at all — `sparkrun benchmark perf <recipe> --arena` selects the
+    current Spark Arena profile itself, so it stays right as that profile is
+    revised.
+  maintainer: "@dbsci"
+  source: https://blog.kubesimplify.com/qwen3-8-27b-on-dgx-spark
+
+category: performance
+
+args:
+  depth: [ 0, 16384, 32768 ]
+  pp: [ 2048 ]
+  tg: [ 128 ]
+  concurrency: [ 1, 2, 5, 10 ]
+  prefix_caching: true

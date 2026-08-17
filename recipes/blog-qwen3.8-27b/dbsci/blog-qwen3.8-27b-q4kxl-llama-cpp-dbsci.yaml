@@ -1,0 +1,104 @@
+recipe_version: "2"
+model: unsloth/Qwen3.8-27B-GGUF:Q4_K_XL
+runtime: llama-cpp
+container: ghcr.io/spark-arena/dgx-llama-cpp:latest
+max_nodes: 1
+
+metadata:
+  description: |
+    Qwen3.8-27B (unsloth GGUF, UD-Q4_K_XL) on llama.cpp — engine 3 of 3 in the
+    "one command, three engines" blog set. Transcribed from Saiyam Pathak's
+    "Running Qwen3.8-27B on DGX Spark" (kubesimplify, 2026-08-17), who reached
+    first token here faster than anywhere else.
+
+    ★ THIS IS THE ONLY MEMBER OF THE TRIO THAT IS NOT THE SAME WEIGHTS.
+
+    The vllm and sglang siblings both serve Qwen/Qwen3.8-27B-FP8 (~28.75 GB).
+    This one serves a 4-bit GGUF (16.68 GiB), because a Q4 GGUF is what people
+    actually run under llama.cpp and an FP8 one does not exist. That single
+    difference explains most of the result and should be read into every
+    comparison: on a bandwidth-bound box every generated token streams the
+    whole weight set, so at ~273 GB/s the 16.7 GB quant has a theoretical
+    single-stream ceiling near 16 t/s where the 28.75 GB FP8 checkpoint sits
+    near 9. The blog measured 11.6 t/s here against vLLM FP8's 8.2 — llama.cpp
+    "winning" single-stream is arithmetic, not engine quality. Where vLLM pulls
+    ahead is batching, which amortizes one weight-streaming pass over many
+    concurrent tokens.
+
+    Everything that CAN be held identical to the siblings is: one node, port
+    8000, served name qwen3.8-27b, and `benchmark.tokenizer`. Context is the
+    exception, for a mechanical reason spelled out below.
+
+    ★ CONTEXT SIZING IS THE ONE THING THIS RECIPE HAS TO GET RIGHT ALONE.
+
+    The source post ran `-c 32768` and never hit the trap below, because it
+    never pointed a concurrent load generator at llama.cpp — its llama.cpp leg
+    was measured with `llama-bench`, which has no concurrency dimension. This
+    set does, so the sizing has to be derived rather than copied.
+
+    In llama-server, `--ctx-size` is the TOTAL context, divided evenly across
+    `--parallel` slots. It is not a per-request limit like vLLM's
+    `--max-model-len`. So the deepest cell of the blog-parity profile — depth
+    32768 at concurrency 10 — needs each of 10 slots to hold roughly
+    32768 (depth) + 2048 (pp) + 128 (tg) ≈ 34944 tokens, and `-c 32768` would
+    not serve even ONE such request, let alone ten. Hence:
+
+        parallel: 10        matches the profile's max concurrency
+        ctx_size: 409600    10 slots x 40960, ~17% headroom per slot
+
+    Set them together. Raising `ctx_size` without raising `parallel` gives one
+    enormous slot and the concurrent cells still fail; raising `parallel`
+    without `ctx_size` shrinks every slot and the deep cells fail instead.
+
+    The KV bill is affordable for an architectural reason: only 16 of the 64
+    layers are full attention, the other 48 are Gated DeltaNet with
+    constant-size state, so KV grows at roughly a quarter of the rate a
+    conventional 64-layer model's would. Order-of-magnitude that is ~26 GiB of
+    KV on top of 16.68 GiB of weights, comfortably inside GB10's 121.7 GiB.
+
+    The Spark Arena profile (`sparkrun benchmark perf … --arena`) reaches
+    deeper than the blog-parity one, so redo this arithmetic before running
+    it here: at 100000 tokens of depth the same 10 slots want roughly 1.3M
+    total context, which will not fit. The vllm and sglang siblings have no
+    such coupling — their per-request limit is independent of concurrency.
+
+    The GGUF repo also ships mmproj-BF16.gguf alongside the weights and
+    llama.cpp picks it up automatically, so the vision path works without any
+    flag here.
+  maintainer: "@dbsci"
+  model_params: 27B dense hybrid (48 Gated DeltaNet + 16 full-attention layers)
+  model_dtype: q4_k_xl
+  quantization: GGUF UD-Q4_K_XL (unsloth dynamic)
+  source: https://blog.kubesimplify.com/qwen3-8-27b-on-dgx-spark
+
+defaults:
+  port: 8000
+  host: 0.0.0.0
+  served_model_name: qwen3.8-27b
+  n_gpu_layers: 99
+  # Total context, split across `parallel` slots — NOT a per-request limit.
+  # 10 slots x 40960. See the sizing note in metadata before changing either.
+  ctx_size: 409600
+  parallel: 10
+
+benchmark:
+  # Load-bearing for THIS recipe in particular: a GGUF repo carries no HF
+  # tokenizer for llama-benchy to load, so without this pin the depth prompts
+  # are tokenized with its GPT-2 fallback and the depth axis stops matching the
+  # vllm/sglang siblings. Same value in all three recipes.
+  tokenizer: Qwen/Qwen3.8-27B
+
+command: |
+  llama-server \
+      -hf {model} \
+      --host {host} \
+      --port {port} \
+      --alias {served_model_name} \
+      --n-gpu-layers {n_gpu_layers} \
+      --ctx-size {ctx_size} \
+      --parallel {parallel} \
+      --cont-batching \
+      --flash-attn on \
+      --jinja \
+      --no-webui \
+      --no-mmap
