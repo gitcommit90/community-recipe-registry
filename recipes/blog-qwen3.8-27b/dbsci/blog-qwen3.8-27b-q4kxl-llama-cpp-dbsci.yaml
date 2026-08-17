@@ -36,15 +36,20 @@ metadata:
     was measured with `llama-bench`, which has no concurrency dimension. This
     set does, so the sizing has to be derived rather than copied.
 
-    In llama-server, `--ctx-size` is the TOTAL context, divided evenly across
-    `--parallel` slots. It is not a per-request limit like vLLM's
-    `--max-model-len`. So the deepest cell of the blog-parity profile — depth
-    32768 at concurrency 10 — needs each of 10 slots to hold roughly
-    32768 (depth) + 2048 (pp) + 128 (tg) ≈ 34944 tokens, and `-c 32768` would
-    not serve even ONE such request, let alone ten. Hence:
+    sparkrun already translates the cross-runtime `max_model_len` key to
+    llama.cpp's `--ctx-size`, so the recipes agree on spelling. They do not
+    agree on MEANING, and no translation can fix that: in llama-server
+    `--ctx-size` is the TOTAL context, divided evenly across `--parallel`
+    slots, where vLLM's `--max-model-len` is a per-request limit independent
+    of concurrency.
 
-        parallel: 10        matches the profile's max concurrency
-        ctx_size: 409600    10 slots x 40960, ~17% headroom per slot
+    So the deepest cell of the blog-parity profile — depth 32768 at
+    concurrency 10 — needs each of 10 slots to hold roughly 32768 (depth) +
+    2048 (pp) + 128 (tg) ≈ 34944 tokens, and 32768 would not serve even ONE
+    such request, let alone ten. Hence:
+
+        parallel: 10           matches the profile's max concurrency
+        max_model_len: 409600  10 slots x 40960, ~17% headroom per slot
 
     Set them together. Raising `ctx_size` without raising `parallel` gives one
     enormous slot and the concurrent cells still fail; raising `parallel`
@@ -76,9 +81,12 @@ defaults:
   host: 0.0.0.0
   served_model_name: qwen3.8-27b
   n_gpu_layers: 99
-  # Total context, split across `parallel` slots — NOT a per-request limit.
-  # 10 slots x 40960. See the sizing note in metadata before changing either.
-  ctx_size: 409600
+  # Spelled `max_model_len` for cross-runtime consistency with the vllm and
+  # sglang siblings — the llama-cpp runtime translates it to `--ctx-size`.
+  # The NAME is portable; the SEMANTICS are not: this is the TOTAL context,
+  # split across `parallel` slots. 10 slots x 40960. See metadata before
+  # changing either — they move together.
+  max_model_len: 409600
   parallel: 10
 
 benchmark:
@@ -95,7 +103,7 @@ command: |
       --port {port} \
       --alias {served_model_name} \
       --n-gpu-layers {n_gpu_layers} \
-      --ctx-size {ctx_size} \
+      --ctx-size {max_model_len} \
       --parallel {parallel} \
       --cont-batching \
       --flash-attn on \
