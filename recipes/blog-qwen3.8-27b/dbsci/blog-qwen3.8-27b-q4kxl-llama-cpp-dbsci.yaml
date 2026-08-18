@@ -2,7 +2,6 @@ recipe_version: "2"
 model: unsloth/Qwen3.8-27B-GGUF:Q4_K_XL
 runtime: llama-cpp
 container: ghcr.io/spark-arena/dgx-llama-cpp:latest
-max_nodes: 1
 
 metadata:
   description: |
@@ -51,9 +50,9 @@ metadata:
         parallel: 10           matches the profile's max concurrency
         max_model_len: 409600  10 slots x 40960, ~17% headroom per slot
 
-    Set them together. Raising `ctx_size` without raising `parallel` gives one
-    enormous slot and the concurrent cells still fail; raising `parallel`
-    without `ctx_size` shrinks every slot and the deep cells fail instead.
+    Set them together. Raising `max_model_len` without raising `parallel` gives
+    one enormous slot and the concurrent cells still fail; raising `parallel`
+    without `max_model_len` shrinks every slot and the deep cells fail instead.
 
     The KV bill is affordable for an architectural reason: only 16 of the 64
     layers are full attention, the other 48 are Gated DeltaNet with
@@ -70,10 +69,8 @@ metadata:
     The GGUF repo also ships mmproj-BF16.gguf alongside the weights and
     llama.cpp picks it up automatically, so the vision path works without any
     flag here.
-  maintainer: "@dbsci"
-  model_params: 27B dense hybrid (48 Gated DeltaNet + 16 full-attention layers)
-  model_dtype: q4_k_xl
-  quantization: GGUF UD-Q4_K_XL (unsloth dynamic)
+  model_params: 27B
+  model_dtype: q4_k
   source: https://blog.kubesimplify.com/qwen3-8-27b-on-dgx-spark
 
 defaults:
@@ -88,6 +85,11 @@ defaults:
   # changing either — they move together.
   max_model_len: 409600
   parallel: 10
+  flash_attn: "on"
+  jinja: true
+  cont_batching: true
+  webui: false
+  mmap: false
 
 benchmark:
   # Load-bearing for THIS recipe in particular: a GGUF repo carries no HF
@@ -96,17 +98,7 @@ benchmark:
   # vllm/sglang siblings. Same value in all three recipes.
   tokenizer: Qwen/Qwen3.8-27B
 
-command: |
-  llama-server \
-      -hf {model} \
-      --host {host} \
-      --port {port} \
-      --alias {served_model_name} \
-      --n-gpu-layers {n_gpu_layers} \
-      --ctx-size {max_model_len} \
-      --parallel {parallel} \
-      --cont-batching \
-      --flash-attn on \
-      --jinja \
-      --no-webui \
-      --no-mmap
+# No `command:` block on purpose — every key above maps to a llama-server flag,
+# so sparkrun builds the serve command itself. Command blocks allow customization of the
+# serve command. The serve command can use parameters like {max_model_len} and {port} to refer to the values
+# defined in the defaults section. Customize to reach rare/exotic/new flags.

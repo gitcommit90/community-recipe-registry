@@ -2,7 +2,6 @@ recipe_version: "2"
 model: Qwen/Qwen3.8-27B-FP8
 runtime: vllm
 container: ghcr.io/spark-arena/dgx-vllm-eugr-nightly:latest
-max_nodes: 1
 
 metadata:
   description: |
@@ -29,8 +28,6 @@ metadata:
     a plain unsloth GGUF with no MTP head, so turning MTP on here would be
     comparing a speculative engine against a non-speculative one. See the
     sglang sibling's notes for the same reasoning applied to NEXTN.
-  maintainer: "@dbsci"
-  model_params: 27B dense hybrid (48 Gated DeltaNet + 16 full-attention layers)
   model_dtype: fp8
   kv_dtype: fp8
   quantization: fp8
@@ -50,6 +47,9 @@ defaults:
   attention_backend: flashinfer
   tool_call_parser: qwen3_coder
   reasoning_parser: qwen3
+  enable_auto_tool_choice: true
+  enable_prefix_caching: true
+  trust_remote_code: true
 
 env:
   VLLM_MARLIN_USE_ATOMIC_ADD: "1"
@@ -61,21 +61,7 @@ benchmark:
   # depth axis comparable across engines.
   tokenizer: Qwen/Qwen3.8-27B
 
-command: |
-  vllm serve {model} \
-    --host {host} \
-    --port {port} \
-    --served-model-name {served_model_name} \
-    --max-model-len {max_model_len} \
-    --max-num-batched-tokens {max_num_batched_tokens} \
-    --gpu-memory-utilization {gpu_memory_utilization} \
-    --enable-auto-tool-choice \
-    --tool-call-parser {tool_call_parser} \
-    --reasoning-parser {reasoning_parser} \
-    --kv-cache-dtype {kv_cache_dtype} \
-    --load-format {load_format} \
-    --attention-backend {attention_backend} \
-    --enable-prefix-caching \
-    --trust-remote-code \
-    -tp {tensor_parallel} \
-    -pp {pipeline_parallel}
+# No `command:` block on purpose — every key above maps to a vLLM flag, so
+# sparkrun builds the serve command itself. Command blocks allow customization of the
+# serve command. The serve command can use parameters like {max_model_len} and {port} to refer to the values
+# defined in the defaults section. Customize to reach rare/exotic/new flags.

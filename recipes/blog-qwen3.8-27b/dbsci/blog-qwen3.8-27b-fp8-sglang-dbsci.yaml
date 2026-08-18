@@ -2,7 +2,6 @@ recipe_version: "2"
 model: Qwen/Qwen3.8-27B-FP8
 runtime: sglang
 container: lmsysorg/sglang:latest-cu130
-max_nodes: 1
 
 metadata:
   description: |
@@ -38,18 +37,14 @@ metadata:
     recipe this was adapted from, and it roughly doubles single-stream decode
     (the blog measured 7.7 → 13.4 t/s at c=1, 54.3 → 71.0 t/s aggregate at
     c=10). That makes this the one member of the trio running speculation, so
-    it is NOT apples-to-apples with the vllm sibling as shipped. No run-time
-    flag removes it — `-o` overrides a value, and the four `--speculative-*`
-    flags are written into the `command:` template — so for the strictly
-    matched three-way comparison, copy this file locally and delete the four
-    `speculative_*` keys from `defaults:` together with the four matching
-    `--speculative-*` lines from `command:`.
+    it is NOT apples-to-apples with the vllm sibling as shipped. For the
+    strictly matched three-way comparison, copy this file locally and delete
+    the four `speculative_*` keys from `defaults:` — with no `command:` block
+    to keep in step, that is the whole edit.
 
     Both numbers are worth having and the blog reports both; the recipe ships
     with speculation on because that is the configuration a person actually
     wants to serve.
-  maintainer: "@dbsci"
-  model_params: 27B dense hybrid (48 Gated DeltaNet + 16 full-attention layers)
   model_dtype: fp8
   kv_dtype: fp8
   quantization: fp8
@@ -69,26 +64,14 @@ defaults:
   speculative_num_steps: 3
   speculative_eagle_topk: 1
   speculative_num_draft_tokens: 4
+  trust_remote_code: true
 
 benchmark:
   # See the vllm sibling — pinned so depth labels are real Qwen tokens in all
   # three runs rather than llama-benchy's GPT-2 fallback.
   tokenizer: Qwen/Qwen3.8-27B
 
-command: |
-  sglang serve \
-      --model-path {model} \
-      --served-model-name {served_model_name} \
-      --host {host} \
-      --port {port} \
-      --tp {tensor_parallel} \
-      --mem-fraction-static {gpu_memory_utilization} \
-      --context-length {max_model_len} \
-      --attention-backend {attention_backend} \
-      --reasoning-parser {reasoning_parser} \
-      --tool-call-parser {tool_call_parser} \
-      --speculative-algorithm {speculative_algorithm} \
-      --speculative-num-steps {speculative_num_steps} \
-      --speculative-eagle-topk {speculative_eagle_topk} \
-      --speculative-num-draft-tokens {speculative_num_draft_tokens} \
-      --trust-remote-code
+# No `command:` block on purpose — every key above maps to an SGLang flag, so
+# sparkrun builds the serve command itself. Command blocks allow customization of the
+# serve command. The serve command can use parameters like {max_model_len} and {port} to refer to the values
+# defined in the defaults section. Customize to reach rare/exotic/new flags.

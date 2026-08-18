@@ -4,12 +4,14 @@ A matched set of three recipes serving **Qwen3.8-27B** on a single DGX Spark (GB
 **vLLM**, **SGLang** and **llama.cpp**, built so that the only thing that changes between
 runs is the recipe name.
 
+These were written for Spark Arena Blog Entry that is a continuation of another blog post: https://blog.kubesimplify.com/qwen3-8-27b-on-dgx-spark.
+
 To reproduce the original post's tables, run the companion blog-parity profile:
 
 ```bash
-sparkrun benchmark perf @community/blog-qwen3.8-27b-fp8-vllm-dbsci        --profile blog-qwen3.8-27b-dbsci
-sparkrun benchmark perf @community/blog-qwen3.8-27b-fp8-sglang-dbsci      --profile blog-qwen3.8-27b-dbsci
-sparkrun benchmark perf @community/blog-qwen3.8-27b-q4kxl-llama-cpp-dbsci --profile blog-qwen3.8-27b-dbsci
+sparkrun benchmark perf @community/blog-qwen3.8-27b-fp8-vllm-dbsci        --profile @community/blog-qwen3.8-27b-dbsci
+sparkrun benchmark perf @community/blog-qwen3.8-27b-fp8-sglang-dbsci      --profile @community/blog-qwen3.8-27b-dbsci
+sparkrun benchmark perf @community/blog-qwen3.8-27b-q4kxl-llama-cpp-dbsci --profile @community/blog-qwen3.8-27b-dbsci
 ```
 
 To put results on the leaderboard instead, name no profile at all:
@@ -24,6 +26,11 @@ as that profile is revised — which is why it is better than spelling a version
 
 Either way, one command launches the workload, waits for it to come up healthy, runs the
 ladder, stops the workload and writes a results YAML.
+
+None of the three carries a `command:` block. Every key in `defaults:` maps to a flag the
+runtime knows how to emit, so sparkrun builds each serve command itself — which is what keeps
+the three genuinely comparable, since there is no hand-written command line to drift out of
+step with the settings above it.
 
 ## Why these exist
 
@@ -75,17 +82,17 @@ not engine quality.
 **2. SGLang ships with NEXTN speculation on, the other two ship without.** It roughly doubles
 single-stream decode and it is the configuration a person actually wants to serve, so it is
 on by default. For the strictly matched three-way run, copy the file and delete the four
-`speculative_*` keys from `defaults:` along with the four matching `--speculative-*` lines
-from `command:` — `-o` overrides a value and cannot remove a flag written into the
-`command:` template.
+`speculative_*` keys from `defaults:` — none of these recipes carries a `command:` block, so
+that is the whole edit.
 
 **3. llama.cpp's context is 409600, not 131072 — and that is not a bigger window.** In
 llama-server, `--ctx-size` is the *total* context divided evenly across `--parallel` slots,
 not a per-request limit like vLLM's `--max-model-len`. The profile's deepest cell is depth
 32768 at concurrency 10, so each of 10 slots needs ~32768 + 2048 + 128 ≈ 34,944 tokens:
-10 × 40960 = 409600 total, or about 40K of usable window per request. `ctx_size` and
+10 × 40960 = 409600 total, or about 40K of usable window per request. `max_model_len` and
 `parallel` have to move together — raising one alone fails the deep cells or the concurrent
-ones respectively.
+ones respectively. (sparkrun translates the cross-runtime `max_model_len` key to
+`--ctx-size`, so the recipes agree on spelling; the *meaning* is what differs.)
 
 This is the one number in the set that is derived rather than transcribed, because the source
 post never hit it: its llama.cpp leg was measured with `llama-bench`, which has no
@@ -136,4 +143,3 @@ FP8: 8.2 t/s at depth 0, 7.9 t/s at 32K).
 ## Credits
 
 Configuration and measurements from [Saiyam Pathak](https://blog.kubesimplify.com/qwen3-8-27b-on-dgx-spark).
-Packaged as recipes by [@dbsci](https://forums.developer.nvidia.com/u/dbsci/summary).
