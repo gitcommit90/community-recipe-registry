@@ -4,7 +4,8 @@ A matched set of three recipes serving **Qwen3.8-27B** on a single DGX Spark (GB
 **vLLM**, **SGLang** and **llama.cpp**, built so that the only thing that changes between
 runs is the recipe name.
 
-These were written for Spark Arena Blog Entry that is a continuation of another blog post: https://blog.kubesimplify.com/qwen3-8-27b-on-dgx-spark.
+These were written for [Spark Arena Blog Entry](https://blog.spark-arena.com/posts/3-one-command-three-engines/one-command-three-engines/)
+that is a "continuation" of another blog post: https://blog.kubesimplify.com/qwen3-8-27b-on-dgx-spark.
 
 To reproduce the original post's tables, run the companion blog-parity profile:
 
