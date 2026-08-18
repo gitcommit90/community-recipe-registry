@@ -77,6 +77,7 @@ defaults:
   port: 8000
   host: 0.0.0.0
   served_model_name: qwen3.8-27b
+  tensor_parallel: 1
   n_gpu_layers: 99
   # Spelled `max_model_len` for cross-runtime consistency with the vllm and
   # sglang siblings — the llama-cpp runtime translates it to `--ctx-size`.
